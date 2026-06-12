@@ -1,0 +1,17 @@
+{
+	"compilerOptions": {
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"target": "es2024",
+		"skipLibCheck": true,
+		"strict": true,
+		"esModuleInterop": true,
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"types": ["node"],
+		"paths": {
+			"@/*": ["./src/*"]
+		}
+	},
+	"include": ["src"]
+}

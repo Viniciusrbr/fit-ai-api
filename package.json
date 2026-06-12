@@ -1,0 +1,39 @@
+{
+	"name": "fit-ai-api",
+	"version": "1.0.0",
+	"description": "",
+	"scripts": {
+		"dev": "tsx --watch src/index.ts",
+		"check": "biome check .",
+		"build": "tsup src --out-dir build",
+		"check:fix": "biome check --write .",
+		"format": "biome format --write .",
+		"lint": "biome lint ."
+	},
+	"engines": {
+		"node": "24.x"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"devEngines": {
+		"packageManager": {
+			"name": "pnpm",
+			"version": "^11.1.0",
+			"onFail": "download"
+		}
+	},
+	"type": "module",
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.16",
+		"@types/node": "^25.9.3",
+		"tsx": "^4.22.4",
+		"typescript": "^6.0.3"
+	},
+	"dependencies": {
+		"dotenv": "^17.4.2",
+		"fastify": "^5.8.5",
+		"fastify-type-provider-zod": "^6.1.0",
+		"zod": "^4.4.3"
+	}
+}
