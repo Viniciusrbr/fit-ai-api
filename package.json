@@ -31,6 +31,9 @@
 		"typescript": "^6.0.3"
 	},
 	"dependencies": {
+		"@fastify/swagger": "^9.7.0",
+		"@fastify/swagger-ui": "^6.0.0",
+		"@scalar/fastify-api-reference": "^1.59.2",
 		"dotenv": "^17.4.2",
 		"fastify": "^5.8.5",
 		"fastify-type-provider-zod": "^6.1.0",
