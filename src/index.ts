@@ -1,6 +1,8 @@
 import 'dotenv/config';
+import fastifyCors from '@fastify/cors';
 import fastifySwagger from '@fastify/swagger';
 import fastifyApiReference from '@scalar/fastify-api-reference';
+import { fromNodeHeaders } from 'better-auth/node';
 import Fastify from 'fastify';
 import {
 	jsonSchemaTransform,
@@ -9,6 +11,7 @@ import {
 	type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import z from 'zod';
+import { auth } from './lib/auth';
 import { env } from './lib/env';
 
 const app = Fastify({
@@ -17,17 +20,6 @@ const app = Fastify({
 
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
-
-app.withTypeProvider<ZodTypeProvider>().route({
-	method: 'GET',
-	url: '/swagger.json',
-	schema: {
-		hide: true,
-	},
-	handler: async () => {
-		return app.swagger();
-	},
-});
 
 app.withTypeProvider<ZodTypeProvider>().route({
 	method: 'GET',
@@ -65,6 +57,17 @@ await app.register(fastifySwagger, {
 	transform: jsonSchemaTransform,
 });
 
+app.withTypeProvider<ZodTypeProvider>().route({
+	method: 'GET',
+	url: '/swagger.json',
+	schema: {
+		hide: true,
+	},
+	handler: async () => {
+		return app.swagger();
+	},
+});
+
 await app.register(fastifyApiReference, {
 	routePrefix: '/docs',
 	configuration: {
@@ -80,6 +83,46 @@ await app.register(fastifyApiReference, {
 				url: '/api/auth/open-api/generate-schema',
 			},
 		],
+	},
+});
+
+await app.register(fastifyCors, {
+	origin: ['http://localhost:3000', 'http://localhost:8081'],
+	credentials: true,
+});
+
+// Register authentication endpoint
+app.route({
+	method: ['GET', 'POST'],
+	url: '/api/auth/*',
+	async handler(request, reply) {
+		try {
+			// Construct request URL
+			const url = new URL(request.url, `http://${request.headers.host}`);
+
+			// Convert Fastify headers to standard Headers object
+			const headers = fromNodeHeaders(request.headers);
+			// Create Fetch API-compatible request
+			const req = new Request(url.toString(), {
+				method: request.method,
+				headers,
+				...(request.body ? { body: JSON.stringify(request.body) } : {}),
+			});
+			// Process authentication request
+			const response = await auth.handler(req);
+			// Forward response to client
+			reply.status(response.status);
+			response.headers.forEach((value, key) => {
+					reply.header(key, value);
+				});
+			return reply.send(response.body ? await response.text() : null);
+		} catch (error) {
+			app.log.error(error);
+			return reply.status(500).send({
+				error: 'Internal authentication error',
+				code: 'AUTH_FAILURE',
+			});
+		}
 	},
 });
 
