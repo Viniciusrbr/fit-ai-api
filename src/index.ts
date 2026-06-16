@@ -10,9 +10,9 @@ import {
 	validatorCompiler,
 	type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
-import z from 'zod';
 import { auth } from './lib/auth';
 import { env } from './lib/env';
+import { workoutPlanRoutes } from './routes/workout-plan';
 
 const app = Fastify({
 	logger: true,
@@ -20,25 +20,6 @@ const app = Fastify({
 
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
-
-app.withTypeProvider<ZodTypeProvider>().route({
-	method: 'GET',
-	url: '/',
-	schema: {
-		description: 'Hello world',
-		tags: ['Hello World'],
-		response: {
-			200: z.object({
-				message: z.string(),
-			}),
-		},
-	},
-	handler: () => {
-		return {
-			message: 'Hello World',
-		};
-	},
-});
 
 await app.register(fastifySwagger, {
 	openapi: {
@@ -56,6 +37,9 @@ await app.register(fastifySwagger, {
 	},
 	transform: jsonSchemaTransform,
 });
+
+// Routes
+await app.register(workoutPlanRoutes, { prefix: '/workout-plans' });
 
 app.withTypeProvider<ZodTypeProvider>().route({
 	method: 'GET',
@@ -113,8 +97,8 @@ app.route({
 			// Forward response to client
 			reply.status(response.status);
 			response.headers.forEach((value, key) => {
-					reply.header(key, value);
-				});
+				reply.header(key, value);
+			});
 			return reply.send(response.body ? await response.text() : null);
 		} catch (error) {
 			app.log.error(error);
