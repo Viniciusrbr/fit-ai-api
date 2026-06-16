@@ -12,6 +12,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { auth } from './lib/auth';
 import { env } from './lib/env';
+import { homeRoutes } from './routes/home';
 import { workoutPlanRoutes } from './routes/workout-plan';
 
 const app = Fastify({
@@ -40,6 +41,7 @@ await app.register(fastifySwagger, {
 
 // Routes
 await app.register(workoutPlanRoutes, { prefix: '/workout-plans' });
+await app.register(homeRoutes, { prefix: '/home' });
 
 app.withTypeProvider<ZodTypeProvider>().route({
 	method: 'GET',
