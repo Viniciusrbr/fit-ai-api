@@ -13,6 +13,7 @@ import {
 import { auth } from './lib/auth';
 import { env } from './lib/env';
 import { homeRoutes } from './routes/home';
+import { meRoutes } from './routes/me';
 import { statsRoutes } from './routes/stats';
 import { workoutPlanRoutes } from './routes/workout-plan';
 
@@ -44,6 +45,7 @@ await app.register(fastifySwagger, {
 await app.register(workoutPlanRoutes, { prefix: '/workout-plans' });
 await app.register(homeRoutes, { prefix: '/home' });
 await app.register(statsRoutes, { prefix: '/stats' });
+await app.register(meRoutes, { prefix: '/me' });
 
 app.withTypeProvider<ZodTypeProvider>().route({
 	method: 'GET',
