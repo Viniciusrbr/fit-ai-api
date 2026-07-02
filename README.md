@@ -4,6 +4,12 @@ API REST do **Fit.ai**, um aplicativo de fitness que ajuda pessoas — especialm
 
 **Problema que resolve:** montar um plano de treino coerente (divisão de grupos musculares, séries, repetições, descanso) e manter constância exige conhecimento técnico e disciplina. O Fit.ai concentra tudo isso em um só lugar: geração assistida por IA de planos completos, execução das sessões de treino e métricas de consistência para manter o usuário engajado.
 
+> ✅ **Status: Concluído e em produção.** O projeto está **funcional** e disponível para acesso.
+>
+> 🔗 **Acesse a aplicação:** [fit-ai.viniciusrbr.dev/auth](https://fit-ai.viniciusrbr.dev/auth)
+>
+> 🔧 A aplicação segue **evoluindo**: atualmente passa por etapas de melhoria contínua — refatorações, melhorias de código, ajustes de arquitetura e otimizações (ver [Possíveis Melhorias](#-possíveis-melhorias)).
+
 ---
 
 # 📋 Sobre o Projeto
