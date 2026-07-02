@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
+import utc from 'dayjs/plugin/utc.js';
 import { NotFoundError } from '@/errors';
 import type { WeekDay } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/db';
