@@ -154,13 +154,21 @@ export const HomeResponseSchema = z.object({
 			coverImageUrl: z.url().optional(),
 			exercisesCount: z.number(),
 		})
-		.nullable(),
+		.optional(),
 	workoutStreak: z.number(),
 	consistencyByDay: z.record(
 		z.iso.date(),
 		z.object({
 			workoutDayCompleted: z.boolean(),
 			workoutDayStarted: z.boolean(),
+		}),
+	),
+});
+
+export const AiChatBodySchema = z.object({
+	messages: z.array(
+		z.looseObject({
+			role: z.enum(['system', 'user', 'assistant']),
 		}),
 	),
 });

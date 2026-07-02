@@ -30,7 +30,7 @@ interface ConsistencyByDay {
 
 interface OutputDto {
 	activeWorkoutPlanId: string | null;
-	todayWorkoutDay: {
+	todayWorkoutDay?: {
 		workoutPlanId: string;
 		id: string;
 		name: string;
@@ -39,7 +39,7 @@ interface OutputDto {
 		estimatedDurationInSeconds: number;
 		coverImageUrl?: string;
 		exercisesCount: number;
-	} | null;
+	};
 	workoutStreak: number;
 	consistencyByDay: Record<string, ConsistencyByDay>;
 }
@@ -122,7 +122,7 @@ export class GetHomeData {
 						coverImageUrl: matchingDay.coverImageUrl ?? undefined,
 						exercisesCount: matchingDay._count.exercises,
 					}
-				: null,
+				: undefined,
 			workoutStreak,
 			consistencyByDay,
 		};

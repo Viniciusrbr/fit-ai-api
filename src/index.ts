@@ -12,6 +12,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { auth } from './lib/auth';
 import { env } from './lib/env';
+import { aiRoutes } from './routes/ai';
 import { homeRoutes } from './routes/home';
 import { meRoutes } from './routes/me';
 import { statsRoutes } from './routes/stats';
@@ -46,6 +47,7 @@ await app.register(workoutPlanRoutes, { prefix: '/workout-plans' });
 await app.register(homeRoutes, { prefix: '/home' });
 await app.register(statsRoutes, { prefix: '/stats' });
 await app.register(meRoutes, { prefix: '/me' });
+await app.register(aiRoutes, { prefix: '/ai' });
 
 app.withTypeProvider<ZodTypeProvider>().route({
 	method: 'GET',
@@ -85,6 +87,9 @@ await app.register(fastifyCors, {
 app.route({
 	method: ['GET', 'POST'],
 	url: '/api/auth/*',
+	schema: {
+		hide: true,
+	},
 	async handler(request, reply) {
 		try {
 			// Construct request URL
