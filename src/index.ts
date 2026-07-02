@@ -18,8 +18,22 @@ import { meRoutes } from './routes/me';
 import { statsRoutes } from './routes/stats';
 import { workoutPlanRoutes } from './routes/workout-plan';
 
+const envToLogger = {
+	development: {
+		transport: {
+			target: 'pino-pretty',
+			options: {
+				translateTime: 'HH:MM:ss Z',
+				ignore: 'pid,hostname',
+			},
+		},
+	},
+	production: true,
+	test: false,
+};
+
 const app = Fastify({
-	logger: true,
+	logger: envToLogger[env.NODE_ENV],
 });
 
 app.setValidatorCompiler(validatorCompiler);
@@ -79,7 +93,7 @@ await app.register(fastifyApiReference, {
 });
 
 await app.register(fastifyCors, {
-	origin: ['http://localhost:3000', 'http://localhost:8081'],
+	origin: [env.WEB_APP_BASE_URL],
 	credentials: true,
 });
 
