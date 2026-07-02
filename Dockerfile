@@ -20,7 +20,7 @@ FROM deps AS build
 
 COPY . .
 
-RUN pnpm run build && cp -r src/generated dist/generated
+RUN pnpm run build
 
 # ------- Production -------
 FROM base AS production
