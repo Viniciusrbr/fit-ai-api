@@ -1,12 +1,16 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { openAPI } from 'better-auth/plugins';
-import { prisma } from './db';
-import { env } from './env';
+
+import { env } from '@/env';
+import { prisma } from '@/lib/prisma';
 
 export const auth = betterAuth({
 	baseURL: env.API_BASE_URL,
 	trustedOrigins: [env.WEB_APP_BASE_URL],
+	emailAndPassword: {
+		enabled: true,
+	},
 	socialProviders: {
 		google: {
 			prompt: 'select_account',

@@ -1,7 +1,7 @@
 import { createGroq } from '@ai-sdk/groq';
 import { createOpenRouter, type LanguageModelV4 } from '@openrouter/ai-sdk-provider';
 import { APICallError, type LanguageModelMiddleware, wrapLanguageModel } from 'ai';
-import { env } from './env.js';
+import { env } from '@/env';
 
 const groq = createGroq({ apiKey: env.GROQ_API_KEY });
 const openrouter = createOpenRouter({ apiKey: env.OPENROUTER_API_KEY });
