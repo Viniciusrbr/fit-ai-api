@@ -1,13 +1,13 @@
-import { NotFoundError } from '@/errors';
 import type { WeekDay } from '@/generated/prisma/enums';
-import { prisma } from '@/lib/db';
+import type { WorkoutPlansRepository } from '@/repositories/workout-plans-repository';
+import { NotFoundError } from '@/use-cases/errors/not-found-error';
 
-interface InputDto {
+interface GetWorkoutPlanUseCaseRequest {
 	userId: string;
 	workoutPlanId: string;
 }
 
-interface OutputDto {
+interface GetWorkoutPlanUseCaseResponse {
 	id: string;
 	name: string;
 	workoutDays: Array<{
@@ -21,15 +21,13 @@ interface OutputDto {
 	}>;
 }
 
-export class GetWorkoutPlan {
-	async execute(dto: InputDto): Promise<OutputDto> {
-		const workoutPlan = await prisma.workoutPlan.findFirst({
-			where: { id: dto.workoutPlanId, userId: dto.userId },
-			include: {
-				workoutDays: {
-					include: { _count: { select: { exercises: true } } },
-				},
-			},
+export class GetWorkoutPlanUseCase {
+	constructor(private workoutPlansRepository: WorkoutPlansRepository) {}
+
+	async execute(request: GetWorkoutPlanUseCaseRequest): Promise<GetWorkoutPlanUseCaseResponse> {
+		const workoutPlan = await this.workoutPlansRepository.findByIdAndUserId({
+			workoutPlanId: request.workoutPlanId,
+			userId: request.userId,
 		});
 
 		if (!workoutPlan) {

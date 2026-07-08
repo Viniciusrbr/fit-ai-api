@@ -1,10 +1,10 @@
-import { prisma } from '@/lib/db';
+import type { UsersRepository } from '@/repositories/users-repository';
 
-interface InputDto {
+interface GetUserTrainDataUseCaseRequest {
 	userId: string;
 }
 
-interface OutputDto {
+interface GetUserTrainDataUseCaseResponse {
 	userId: string;
 	userName: string;
 	weightInGrams: number;
@@ -13,19 +13,13 @@ interface OutputDto {
 	bodyFatPercentage: number; // 100 representa 100%
 }
 
-export class GetUserTrainData {
-	async execute(dto: InputDto): Promise<OutputDto | null> {
-		const user = await prisma.user.findUnique({
-			where: { id: dto.userId },
-			select: {
-				id: true,
-				name: true,
-				weightInGrams: true,
-				heightInCentimeters: true,
-				age: true,
-				bodyFatPercentage: true,
-			},
-		});
+export class GetUserTrainDataUseCase {
+	constructor(private usersRepository: UsersRepository) {}
+
+	async execute(
+		request: GetUserTrainDataUseCaseRequest,
+	): Promise<GetUserTrainDataUseCaseResponse | null> {
+		const user = await this.usersRepository.findById(request.userId);
 
 		// Dados de treino ainda não cadastrados
 		if (

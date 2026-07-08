@@ -1,20 +1,20 @@
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
-import { NotFoundError } from '@/errors';
 import type { WeekDay } from '@/generated/prisma/enums';
-import { prisma } from '@/lib/db';
+import type { WorkoutDaysRepository } from '@/repositories/workout-days-repository';
+import { NotFoundError } from '@/use-cases/errors/not-found-error';
 
 dayjs.extend(utc);
 
 const DATE_KEY_FORMAT = 'YYYY-MM-DD';
 
-interface InputDto {
+interface GetWorkoutDayUseCaseRequest {
 	userId: string;
 	workoutPlanId: string;
 	workoutDayId: string;
 }
 
-interface OutputDto {
+interface GetWorkoutDayUseCaseResponse {
 	id: string;
 	name: string;
 	isRest: boolean;
@@ -38,18 +38,14 @@ interface OutputDto {
 	}>;
 }
 
-export class GetWorkoutDay {
-	async execute(dto: InputDto): Promise<OutputDto> {
-		const workoutDay = await prisma.workoutDay.findFirst({
-			where: {
-				id: dto.workoutDayId,
-				workoutPlanId: dto.workoutPlanId,
-				workoutPlan: { userId: dto.userId },
-			},
-			include: {
-				exercises: { orderBy: { order: 'asc' } },
-				sessions: { orderBy: { startedAt: 'asc' } },
-			},
+export class GetWorkoutDayUseCase {
+	constructor(private workoutDaysRepository: WorkoutDaysRepository) {}
+
+	async execute(request: GetWorkoutDayUseCaseRequest): Promise<GetWorkoutDayUseCaseResponse> {
+		const workoutDay = await this.workoutDaysRepository.findByIdWithDetails({
+			workoutDayId: request.workoutDayId,
+			workoutPlanId: request.workoutPlanId,
+			userId: request.userId,
 		});
 
 		if (!workoutDay) {

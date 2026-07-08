@@ -1,12 +1,12 @@
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
-import { prisma } from '@/lib/db';
+import type { WorkoutSessionsRepository } from '@/repositories/workout-sessions-repository';
 
 dayjs.extend(utc);
 
 const DATE_KEY_FORMAT = 'YYYY-MM-DD';
 
-interface InputDto {
+interface GetStatsUseCaseRequest {
 	userId: string;
 	from: string;
 	to: string;
@@ -17,7 +17,7 @@ interface ConsistencyByDay {
 	workoutDayStarted: boolean;
 }
 
-interface OutputDto {
+interface GetStatsUseCaseResponse {
 	workoutStreak: number;
 	consistencyByDay: Record<string, ConsistencyByDay>;
 	completedWorkoutsCount: number;
@@ -25,17 +25,17 @@ interface OutputDto {
 	totalTimeInSeconds: number;
 }
 
-export class GetStats {
-	async execute(dto: InputDto): Promise<OutputDto> {
-		const from = dayjs.utc(dto.from).startOf('day');
-		const to = dayjs.utc(dto.to).endOf('day');
+export class GetStatsUseCase {
+	constructor(private workoutSessionsRepository: WorkoutSessionsRepository) {}
 
-		const sessions = await prisma.workoutSession.findMany({
-			where: {
-				startedAt: { gte: from.toDate(), lte: to.toDate() },
-				workoutDay: { workoutPlan: { userId: dto.userId } },
-			},
-			select: { startedAt: true, completedAt: true },
+	async execute(request: GetStatsUseCaseRequest): Promise<GetStatsUseCaseResponse> {
+		const from = dayjs.utc(request.from).startOf('day');
+		const to = dayjs.utc(request.to).endOf('day');
+
+		const sessions = await this.workoutSessionsRepository.findManyByUserIdBetween({
+			userId: request.userId,
+			from: from.toDate(),
+			to: to.toDate(),
 		});
 
 		const consistencyByDay = sessions.reduce<Record<string, ConsistencyByDay>>((acc, session) => {

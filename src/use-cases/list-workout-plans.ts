@@ -1,12 +1,12 @@
 import type { WeekDay } from '@/generated/prisma/enums';
-import { prisma } from '@/lib/db';
+import type { WorkoutPlansRepository } from '@/repositories/workout-plans-repository';
 
-interface InputDto {
+interface ListWorkoutPlansUseCaseRequest {
 	userId: string;
 	active?: boolean;
 }
 
-interface OutputDto {
+interface ListWorkoutPlansUseCaseResponse {
 	id: string;
 	name: string;
 	isActive: boolean;
@@ -30,19 +30,15 @@ interface OutputDto {
 	}>;
 }
 
-export class ListWorkoutPlans {
-	async execute(dto: InputDto): Promise<OutputDto[]> {
-		const workoutPlans = await prisma.workoutPlan.findMany({
-			where: {
-				userId: dto.userId,
-				...(dto.active === undefined ? {} : { isActive: dto.active }),
-			},
-			orderBy: { createdAt: 'desc' },
-			include: {
-				workoutDays: {
-					include: { exercises: { orderBy: { order: 'asc' } } },
-				},
-			},
+export class ListWorkoutPlansUseCase {
+	constructor(private workoutPlansRepository: WorkoutPlansRepository) {}
+
+	async execute(
+		request: ListWorkoutPlansUseCaseRequest,
+	): Promise<ListWorkoutPlansUseCaseResponse[]> {
+		const workoutPlans = await this.workoutPlansRepository.findManyByUserId({
+			userId: request.userId,
+			active: request.active,
 		});
 
 		return workoutPlans.map((plan) => ({

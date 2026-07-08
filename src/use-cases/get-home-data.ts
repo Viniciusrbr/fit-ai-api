@@ -1,7 +1,8 @@
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import { WeekDay } from '@/generated/prisma/enums';
-import { prisma } from '@/lib/db';
+import type { WorkoutPlansRepository } from '@/repositories/workout-plans-repository';
+import type { WorkoutSessionsRepository } from '@/repositories/workout-sessions-repository';
 
 dayjs.extend(utc);
 
@@ -18,7 +19,7 @@ const WEEK_DAY_BY_INDEX: WeekDay[] = [
 
 const DATE_KEY_FORMAT = 'YYYY-MM-DD';
 
-interface InputDto {
+interface GetHomeDataUseCaseRequest {
 	userId: string;
 	date: string;
 }
@@ -28,7 +29,7 @@ interface ConsistencyByDay {
 	workoutDayStarted: boolean;
 }
 
-interface OutputDto {
+interface GetHomeDataUseCaseResponse {
 	activeWorkoutPlanId: string | null;
 	todayWorkoutDay?: {
 		workoutPlanId: string;
@@ -44,35 +45,27 @@ interface OutputDto {
 	consistencyByDay: Record<string, ConsistencyByDay>;
 }
 
-export class GetHomeData {
-	async execute(dto: InputDto): Promise<OutputDto> {
-		const referenceDate = dayjs.utc(dto.date).startOf('day');
+export class GetHomeDataUseCase {
+	constructor(
+		private workoutPlansRepository: WorkoutPlansRepository,
+		private workoutSessionsRepository: WorkoutSessionsRepository,
+	) {}
+
+	async execute(request: GetHomeDataUseCaseRequest): Promise<GetHomeDataUseCaseResponse> {
+		const referenceDate = dayjs.utc(request.date).startOf('day');
 		const weekStart = referenceDate.subtract(referenceDate.day(), 'day');
 		const weekEnd = weekStart.add(6, 'day').endOf('day');
 
 		const [activePlan, weekSessions, completedSessions] = await Promise.all([
-			prisma.workoutPlan.findFirst({
-				where: { userId: dto.userId, isActive: true },
-				include: {
-					workoutDays: {
-						include: { _count: { select: { exercises: true } } },
-					},
-				},
+			this.workoutPlansRepository.findActiveByUserId(request.userId),
+			this.workoutSessionsRepository.findManyByUserIdBetween({
+				userId: request.userId,
+				from: weekStart.toDate(),
+				to: weekEnd.toDate(),
 			}),
-			prisma.workoutSession.findMany({
-				where: {
-					startedAt: { gte: weekStart.toDate(), lte: weekEnd.toDate() },
-					workoutDay: { workoutPlan: { userId: dto.userId } },
-				},
-				select: { startedAt: true, completedAt: true },
-			}),
-			prisma.workoutSession.findMany({
-				where: {
-					completedAt: { not: null },
-					startedAt: { lte: referenceDate.endOf('day').toDate() },
-					workoutDay: { workoutPlan: { userId: dto.userId } },
-				},
-				select: { startedAt: true },
+			this.workoutSessionsRepository.findManyCompletedByUserIdUntil({
+				userId: request.userId,
+				until: referenceDate.endOf('day').toDate(),
 			}),
 		]);
 
