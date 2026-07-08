@@ -1,9 +1,9 @@
-import { google } from '@ai-sdk/google';
 import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from 'ai';
 import { fromNodeHeaders } from 'better-auth/node';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import z from 'zod';
+import { coachModel } from '@/lib/ai-model.js';
 import { CreateWorkoutPlan } from '@/useCases/create-workout-plan.js';
 import { GetUserTrainData } from '@/useCases/get-user-train-data.js';
 import { ListWorkoutPlans } from '@/useCases/list-workout-plans.js';
@@ -11,7 +11,7 @@ import { UpsertUserTrainData } from '@/useCases/upsert-user-train-data.js';
 import { WeekDay } from '../generated/prisma/enums.js';
 import { auth } from '../lib/auth.js';
 
-const BASE_SYSTEM_PROMPT = `Você é um personal trainer virtual. Você é especialista em montagem de planos de treino personalizados e também tira dúvidas gerais sobre treino, como execução de exercícios, técnica, músculos trabalhados, alongamento e descanso.
+const SYSTEM_PROMPT = `Você é um personal trainer virtual. Você é especialista em montagem de planos de treino personalizados e também tira dúvidas gerais sobre treino, como execução de exercícios, técnica, músculos trabalhados, alongamento e descanso.
 
 ## Personalidade
 - Tom amigável, motivador e acolhedor.
@@ -20,8 +20,8 @@ const BASE_SYSTEM_PROMPT = `Você é um personal trainer virtual. Você é espec
 
 ## Regras de Interação
 
-1. Os dados de treino do usuário já estão disponíveis na seção "Dados do Usuário" abaixo. **NUNCA** peça esses dados novamente se eles já estiverem preenchidos.
-2. Se os dados do usuário aparecem como **não cadastrados**:
+1. **SEMPRE** chame a tool \`getUserTrainData\` antes de qualquer interação com o usuário. Isso é obrigatório.
+2. Se o usuário **não tem dados cadastrados** (retornou null):
    - Pergunte nome, peso (kg), altura (cm), idade e % de gordura corporal (inteiro de 0 a 100, onde 100 = 100%).
    - Faça perguntas simples e diretas, tudo em uma única mensagem.
    - Após receber os dados, salve com a tool \`updateUserTrainData\`. **IMPORTANTE**: converta o peso de kg para gramas (multiplique por 1000) antes de salvar.
@@ -69,28 +69,6 @@ SEMPRE forneça um \`coverImageUrl\` para cada dia de treino. Escolha com base n
 
 Alterne entre as duas opções de cada categoria para variar. Dias de descanso usam imagem de superior.`;
 
-interface UserTrainData {
-	userName: string;
-	weightInGrams: number;
-	heightInCentimeters: number;
-	age: number;
-	bodyFatPercentage: number;
-}
-
-const buildSystemPrompt = (trainData: UserTrainData | null): string => {
-	const userDataSection = trainData
-		? `## Dados do Usuário
-- Nome: ${trainData.userName}
-- Peso: ${trainData.weightInGrams / 1000} kg
-- Altura: ${trainData.heightInCentimeters} cm
-- Idade: ${trainData.age} anos
-- Gordura corporal: ${trainData.bodyFatPercentage}%`
-		: `## Dados do Usuário
-Não cadastrados. Solicite os dados ao usuário conforme a regra 2.`;
-
-	return `${BASE_SYSTEM_PROMPT}\n\n${userDataSection}`;
-};
-
 export const aiRoutes = async (app: FastifyInstance) => {
 	app.withTypeProvider<ZodTypeProvider>().route({
 		method: 'POST',
@@ -111,15 +89,21 @@ export const aiRoutes = async (app: FastifyInstance) => {
 			const userId = session.user.id;
 			const { messages } = request.body as { messages: UIMessage[] };
 
-			const getUserTrainData = new GetUserTrainData();
-			const trainData = await getUserTrainData.execute({ userId });
-
 			const result = streamText({
-				model: google('gemini-2.0-flash'),
-				system: buildSystemPrompt(trainData),
+				model: coachModel,
+				system: SYSTEM_PROMPT,
 				messages: await convertToModelMessages(messages),
-				stopWhen: stepCountIs(5),
+				stopWhen: stepCountIs(10),
 				tools: {
+					getUserTrainData: tool({
+						description:
+							'Busca os dados de treino do usuário autenticado (peso, altura, idade, % gordura). Retorna null se não houver dados cadastrados.',
+						inputSchema: z.object({}),
+						execute: async () => {
+							const getUserTrainData = new GetUserTrainData();
+							return getUserTrainData.execute({ userId });
+						},
+					}),
 					updateUserTrainData: tool({
 						description:
 							'Atualiza os dados de treino do usuário autenticado. O peso deve ser em gramas (converter kg * 1000).',
