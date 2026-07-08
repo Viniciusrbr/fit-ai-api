@@ -1,22 +1,24 @@
-import 'dotenv/config';
 import fastifyCors from '@fastify/cors';
 import fastifySwagger from '@fastify/swagger';
 import fastifyApiReference from '@scalar/fastify-api-reference';
 import { fromNodeHeaders } from 'better-auth/node';
-import Fastify from 'fastify';
+import Fastify, { type FastifyError } from 'fastify';
 import {
+	hasZodFastifySchemaValidationErrors,
+	isResponseSerializationError,
 	jsonSchemaTransform,
 	serializerCompiler,
 	validatorCompiler,
 	type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
-import { auth } from './lib/auth';
-import { env } from './lib/env';
-import { aiRoutes } from './routes/ai';
-import { homeRoutes } from './routes/home';
-import { meRoutes } from './routes/me';
-import { statsRoutes } from './routes/stats';
-import { workoutPlanRoutes } from './routes/workout-plan';
+
+import { aiRoutes } from '@/controllers/ai/routes';
+import { homeRoutes } from '@/controllers/home/routes';
+import { meRoutes } from '@/controllers/me/routes';
+import { statsRoutes } from '@/controllers/stats/routes';
+import { workoutPlansRoutes } from '@/controllers/workout-plans/routes';
+import { env } from '@/env';
+import { auth } from '@/lib/auth';
 
 const envToLogger = {
 	development: {
@@ -32,12 +34,44 @@ const envToLogger = {
 	test: false,
 };
 
-const app = Fastify({
+export const app = Fastify({
 	logger: envToLogger[env.NODE_ENV],
 });
 
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
+
+// Tratamento centralizado de erros: controllers tratam apenas erros de domínio
+// e re-lançam o restante para cá
+app.setErrorHandler((error: FastifyError, _request, reply) => {
+	if (hasZodFastifySchemaValidationErrors(error)) {
+		return reply.status(400).send({
+			error: error.message,
+			code: 'VALIDATION_ERROR',
+		});
+	}
+
+	if (isResponseSerializationError(error)) {
+		app.log.error(error);
+		return reply.status(500).send({
+			error: 'Internal server error',
+			code: 'INTERNAL_SERVER_ERROR',
+		});
+	}
+
+	if (error.statusCode && error.statusCode < 500) {
+		return reply.status(error.statusCode).send({
+			error: error.message,
+			code: error.code ?? 'REQUEST_ERROR',
+		});
+	}
+
+	app.log.error(error);
+	return reply.status(500).send({
+		error: 'Internal server error',
+		code: 'INTERNAL_SERVER_ERROR',
+	});
+});
 
 await app.register(fastifySwagger, {
 	openapi: {
@@ -57,7 +91,7 @@ await app.register(fastifySwagger, {
 });
 
 // Routes
-await app.register(workoutPlanRoutes, { prefix: '/workout-plans' });
+await app.register(workoutPlansRoutes, { prefix: '/workout-plans' });
 await app.register(homeRoutes, { prefix: '/home' });
 await app.register(statsRoutes, { prefix: '/stats' });
 await app.register(meRoutes, { prefix: '/me' });
@@ -134,10 +168,3 @@ app.route({
 		}
 	},
 });
-
-try {
-	await app.listen({ host: '0.0.0.0', port: env.PORT });
-} catch (err) {
-	app.log.error(err);
-	process.exit(1);
-}
