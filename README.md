@@ -16,12 +16,12 @@ API REST do **Fit.ai**, um aplicativo de fitness que ajuda pessoas — especialm
 
 O `fit-ai-api` é o back-end de uma aplicação de fitness. Suas responsabilidades centrais são:
 
-- **Autenticação de usuários** (login social via Google).
+- **Autenticação de usuários** (login social via Google e email/senha).
 - **Planos de treino**: um usuário cria planos compostos por dias de treino (`WorkoutDay`), e cada dia contém exercícios (`WorkoutExercise`). Um usuário tem no máximo **um plano ativo** por vez.
 - **Sessões de treino** (`WorkoutSession`): registra o início e a conclusão de um treino em um determinado dia.
 - **Dados de treino do usuário**: peso, altura, idade e percentual de gordura corporal.
 - **Estatísticas e home**: streak (sequência) de treinos, taxa de conclusão, tempo total treinado e consistência por dia.
-- **Chat com IA**: um agente (Google Gemini) que conversa com o usuário, cadastra seus dados físicos e monta planos de treino automaticamente através de _tools_.
+- **Chat com IA**: um agente (Llama 3.3 70B via Groq, com _fallback_ automático para OpenRouter em caso de rate limit) que conversa com o usuário, cadastra seus dados físicos e monta planos de treino automaticamente através de _tools_.
 
 ### Domínio de negócio
 
@@ -66,45 +66,56 @@ A aplicação cliente é o **Fit.ai Web**, uma interface web que consome esta AP
 | **Prisma 7** | ORM para PostgreSQL. O client é gerado em `src/generated/prisma`. |
 | **@prisma/adapter-pg** | Driver adapter (`pg`) usado pelo Prisma para conectar ao PostgreSQL. |
 | **PostgreSQL** | Banco de dados relacional. |
-| **BetterAuth** | Autenticação (login social com Google) e geração do schema OpenAPI de auth via plugin `openAPI`. |
-| **@ai-sdk/google** + **ai (Vercel AI SDK)** | Integração com o modelo **Google Gemini 2.5 Flash** para o personal trainer virtual, incluindo suporte a _tools_ e _streaming_. |
+| **BetterAuth** | Autenticação (login social com Google e email/senha) e geração do schema OpenAPI de auth via plugin `openAPI`. |
+| **ai (Vercel AI SDK)** + **@ai-sdk/groq** + **@openrouter/ai-sdk-provider** | Personal trainer virtual com **Llama 3.3 70B** servido pela Groq e _fallback_ automático para OpenRouter em rate limit (429), com suporte a _tools_ e _streaming_ (ver `src/lib/ai-model.ts`). |
 | **@fastify/swagger** + **@scalar/fastify-api-reference** | Geração da especificação OpenAPI e interface de documentação interativa em `/docs`. |
 | **@fastify/cors** | Configuração de CORS. |
 | **dayjs** | Manipulação e formatação de datas (com plugin `utc`). |
 | **dotenv** | Carregamento de variáveis de ambiente a partir do `.env`. |
 | **pino-pretty** | Formatação legível dos logs em ambiente de desenvolvimento. |
 | **Biome** | Linter e formatter (substitui ESLint/Prettier). |
+| **Vitest** + **supertest** | Testes unitários (use cases com repositórios in-memory) e e2e (HTTP contra o app real, com banco isolado por schema). |
 | **tsx** | Execução do TypeScript em desenvolvimento com _hot reload_. |
 | **Docker** | Containerização da aplicação (build multi-stage) e do banco de dados (via Docker Compose). |
 | **pnpm** | Gerenciador de pacotes. |
-
-> **Testes:** não há _runner_ de testes configurado neste repositório.
 
 ---
 
 # 🏗 Arquitetura
 
-O projeto segue uma arquitetura em camadas com **Service Layer Pattern** na forma de **Use Cases**, com forte inspiração em princípios de _Clean Architecture_ (desacoplamento entre camada de negócio e infraestrutura via DTOs).
-
-### Fluxo das requisições
+O projeto segue uma arquitetura em camadas inspirada em **Clean Architecture** e **SOLID**, com a regra de dependência:
 
 ```
-Rota (route) → Caso de Uso (use case) → Prisma → PostgreSQL
+Controller (HTTP) → Use Case (regra de negócio) → Interface de Repositório
+                                                        ↑
+                       Factory injeta a implementação Prisma → PostgreSQL
 ```
 
-- **Rotas (`src/routes/`)** — plugins Fastify registrados com um prefixo de URL em `src/index.ts`. Cuidam apenas de **concerns HTTP**: validação de dados (com Zod), autenticação (guarda de sessão, 401), mapeamento de erros para status codes e definição dos status de resposta. **Não contêm regra de negócio.**
-- **Casos de Uso (`src/useCases/`)** — concentram **toda a regra de negócio**. São classes nomeadas com verbos, com um único método `execute(dto)` que recebe um `InputDto` e retorna um `OutputDto`. Convertem o resultado do Prisma para o `OutputDto`, **nunca** retornando o model do Prisma diretamente (garantindo desacoplamento). Falam com o Prisma diretamente.
-- **Schemas (`src/schemas/index.ts`)** — schemas Zod compartilhados entre validação de requisição e geração de OpenAPI.
-- **Erros (`src/errors/index.ts`)** — classes de erro customizadas (`NotFoundError`, `WorkoutPlanNotActiveError`, `SessionAlreadyStartedError`) lançadas pelos use cases e mapeadas para status HTTP nas rotas.
-- **Lib (`src/lib/`)** — infraestrutura: `db.ts` (singleton do Prisma Client), `auth.ts` (configuração do BetterAuth) e `env.ts` (validação das variáveis de ambiente com Zod).
+- **Controllers (`src/controllers/<recurso>/`)** — um handler **fino** por ação (`<acao>.ts`), schemas Zod do recurso com tipos inferidos (`schemas.ts`) e registro das rotas (`routes.ts`). O controller só extrai dados do request, chama a factory do use case e responde; erros de domínio são mapeados para status HTTP via `try/catch` e o restante é re-lançado para o `setErrorHandler` central. **Não contêm regra de negócio nem acesso a banco.**
+- **Use Cases (`src/use-cases/`)** — concentram **toda a regra de negócio**. São classes com sufixo `UseCase`, um único método `execute(request)` tipado com interfaces `<Nome>UseCaseRequest`/`<Nome>UseCaseResponse`, e recebem as **interfaces de repositório via constructor** (injeção de dependência). Mapeiam o resultado do repositório para o Response, **nunca** retornando o model do Prisma diretamente.
+- **Repositórios (`src/repositories/`)** — o contrato é uma **interface** na raiz (ex.: `WorkoutPlansRepository`); a implementação Prisma vive em `prisma/` e uma implementação **in-memory** em `in-memory/` para os testes unitários. Invariantes atômicas (ex.: "um usuário tem no máximo um plano ativo") são garantidas no repositório com `$transaction`.
+- **Factories (`src/use-cases/factories/`)** — `make-<nome>-use-case.ts` instancia os repositórios Prisma concretos e injeta no use case. É o **único** ponto que conhece as implementações concretas.
+- **Erros de domínio (`src/use-cases/errors/`)** — um arquivo por erro (`NotFoundError`, `WorkoutPlanNotActiveError`, `SessionAlreadyStartedError`), lançados pelos use cases e mapeados para status HTTP nos controllers.
+- **Middlewares (`src/middlewares/`)** — `verify-auth.ts` protege rotas via `onRequest`, validando a sessão do BetterAuth e populando `request.user`.
+- **App/Server (`src/app.ts` / `src/server.ts`)** — `app.ts` monta o app Fastify (plugins, rotas, `setErrorHandler` central) e é exportado para os testes e2e; `server.ts` apenas chama `app.listen`.
+- **Lib (`src/lib/`)** — infraestrutura: `prisma.ts` (singleton do Prisma Client), `auth.ts` (BetterAuth) e `ai-model.ts` (modelo de IA com fallback).
+- **Env (`src/env/`)** — validação das variáveis de ambiente com Zod (`safeParse`); único lugar que lê `process.env`.
 
-### Padrões identificados
+### Tratamento de erros centralizado
 
-- **Service Layer Pattern / Use Case Pattern** — lógica de negócio isolada em classes de caso de uso.
-- **DTO Pattern** — entrada e saída dos use cases sempre tipadas por interfaces `InputDto`/`OutputDto`.
-- **Desacoplamento (Clean Architecture)** — os use cases mapeiam explicitamente o resultado do banco para DTOs.
+O `setErrorHandler` em `src/app.ts` padroniza todas as respostas de erro no formato `{ error, code }`:
 
-> **Observação:** **não** há _Controllers_ tradicionais (as rotas Fastify cumprem esse papel), **não** há camada de _Repository_ (por decisão de projeto, os use cases chamam o Prisma diretamente) e **não** há framework de injeção de dependências — os use cases são instanciados diretamente nas rotas.
+- Erro de validação de request (Zod) → `400` `VALIDATION_ERROR`
+- Erro de serialização de response → `500` (logado)
+- Erros com `statusCode < 500` → respeitam o status
+- Fallback → `500` `INTERNAL_SERVER_ERROR`
+
+### Padrões aplicados
+
+- **Repository Pattern** — regra de negócio desacoplada da infraestrutura; interfaces na raiz, implementações Prisma e in-memory intercambiáveis.
+- **Dependency Injection (via constructor) + Factory Pattern** — use cases recebem abstrações; factories montam o grafo concreto.
+- **Use Case Pattern** — uma classe por regra de negócio, com Request/Response tipados.
+- **DTO Pattern** — os models do Prisma nunca vazam para a camada HTTP.
 
 ---
 
@@ -118,29 +129,39 @@ Rota (route) → Caso de Uso (use case) → Prisma → PostgreSQL
 ├── public/
 │   └── db.png               # Diagrama do banco de dados
 ├── src/
-│   ├── errors/              # Classes de erro customizadas
+│   ├── @types/              # Augmentations de tipos (request.user do Fastify)
+│   ├── controllers/         # Por recurso: <acao>.ts + schemas.ts + routes.ts
+│   ├── env/                 # Validação das variáveis de ambiente (Zod)
 │   ├── generated/prisma/    # Prisma Client gerado (não editar manualmente)
-│   ├── lib/                 # Infraestrutura: db, auth, env
-│   ├── routes/              # Plugins de rota Fastify (concerns HTTP)
-│   ├── schemas/             # Schemas Zod (validação + OpenAPI)
-│   ├── useCases/            # Casos de uso (regra de negócio)
-│   └── index.ts             # Entry point: registra plugins e rotas
+│   ├── lib/                 # Infraestrutura: prisma, auth, ai-model
+│   ├── middlewares/         # verify-auth (BetterAuth)
+│   ├── repositories/        # Interfaces + implementações prisma/ e in-memory/
+│   ├── schemas/             # ErrorSchema compartilhado
+│   ├── test/                # use-cases/ (unitários) e e2e/ (supertest)
+│   ├── use-cases/           # Regra de negócio (+ errors/ e factories/)
+│   ├── app.ts               # Monta o app Fastify (plugins, rotas, error handler)
+│   └── server.ts            # Entry point: apenas app.listen
 ├── Dockerfile               # Build multi-stage da aplicação
 ├── docker-compose.yml       # PostgreSQL para desenvolvimento
 ├── prisma.config.ts         # Configuração do Prisma
+├── vitest.config.ts         # Projetos de teste: unit e e2e
 ├── biome.json               # Configuração do Biome (lint/format)
-└── tsconfig.json
+├── tsconfig.json
+└── tsconfig.build.json      # Build de produção (exclui src/test)
 ```
 
 | Pasta | Responsabilidade |
 | ----- | ---------------- |
 | `prisma/` | Schema, enums e migrations do banco de dados. |
-| `src/errors/` | Erros de domínio customizados usados pelos use cases e mapeados nas rotas. |
-| `src/generated/prisma/` | Client gerado automaticamente pelo Prisma (versionado; não editar à mão). |
-| `src/lib/` | Componentes de infraestrutura: conexão com o banco, autenticação e validação de env. |
-| `src/routes/` | Definição das rotas HTTP, validação, autenticação e tratamento de erros. |
-| `src/schemas/` | Schemas Zod reutilizados por request, response e documentação OpenAPI. |
-| `src/useCases/` | Toda a lógica de negócio da aplicação. |
+| `src/controllers/` | Handlers HTTP finos, schemas Zod por recurso e registro de rotas. |
+| `src/use-cases/` | Toda a lógica de negócio; erros de domínio em `errors/`, factories em `factories/`. |
+| `src/repositories/` | Contratos (interfaces) e implementações Prisma/in-memory de acesso a dados. |
+| `src/middlewares/` | Middlewares Fastify (autenticação). |
+| `src/env/` | Validação e tipagem das variáveis de ambiente. |
+| `src/lib/` | Componentes de infraestrutura: Prisma Client, BetterAuth e modelo de IA. |
+| `src/schemas/` | `ErrorSchema` compartilhado (`{ error, code }`). |
+| `src/test/` | Testes unitários (`use-cases/`) e e2e (`e2e/controllers/<recurso>/<acao>.test.ts`). |
+| `src/generated/prisma/` | Client gerado automaticamente pelo Prisma (não editar à mão). |
 
 ---
 
@@ -151,31 +172,32 @@ A autenticação é feita com **BetterAuth**, usando o adapter do Prisma sobre P
 ### O que está implementado
 
 - **Login social com Google (OAuth)** — configurado em `src/lib/auth.ts` com `prompt: 'select_account'`.
+- **Login com email e senha** — habilitado via `emailAndPassword` no BetterAuth (também usado pelos testes e2e para criar usuários autenticados).
 - **Sessões** — o BetterAuth gerencia sessões persistidas no banco (tabela `session`, com `token`, `expiresAt`, `ipAddress`, `userAgent`).
 - **Cookies cross-subdomain** — habilitados em produção para o domínio `.viniciusrbr.dev` (em desenvolvimento, sem domínio explícito).
-- **Endpoints de auth** — servidos por uma rota _catch-all_ (`/api/auth/*`) em `src/index.ts`, que faz a ponte entre o Fastify e a API Web Fetch (`Request`/`Response`) esperada pelo BetterAuth.
+- **Endpoints de auth** — servidos por uma rota _catch-all_ (`/api/auth/*`) em `src/app.ts`, que faz a ponte entre o Fastify e a API Web Fetch (`Request`/`Response`) esperada pelo BetterAuth.
 - **Plugin OpenAPI do BetterAuth** — expõe o schema de auth (disponível na documentação em `/docs`).
 
 ### Como as rotas são protegidas
 
-Cada rota protegida recupera a sessão com:
+Rotas protegidas usam o middleware `verifyAuth` (`src/middlewares/verify-auth.ts`) via `onRequest`:
 
 ```ts
-const session = await auth.api.getSession({
-  headers: fromNodeHeaders(request.headers),
+router.route({
+  method: 'GET',
+  url: '/',
+  onRequest: [verifyAuth], // 401 se não houver sessão; popula request.user
+  // ...
+  handler: listWorkoutPlans,
 });
-if (!session) {
-  return reply.status(401).send({ error: 'Unauthorized', code: 'UNAUTHORIZED' });
-}
 ```
 
-O `session.user.id` é então repassado aos use cases, que garantem que o usuário só acesse os próprios recursos (ex.: `workoutPlan.userId !== dto.userId` → `NotFoundError`).
+O `request.user.id` é então repassado aos use cases, que garantem que o usuário só acesse os próprios recursos (ex.: `workoutPlan.userId !== request.userId` → `NotFoundError`).
 
 ### O que **não** está implementado
 
 - **Não** há JWT emitido pela aplicação (a autenticação é baseada em cookies/sessão do BetterAuth).
 - **Não** há sistema de _roles_, _permissions_ ou RBAC. A autorização é feita apenas por posse do recurso (o recurso pertence ao usuário autenticado).
-- **Não** há login por email/senha configurado no código — apenas o provedor social Google está habilitado.
 
 ---
 
@@ -251,7 +273,7 @@ Todas as rotas de negócio abaixo exigem **autenticação** (sessão válida), r
 
 | Método | Endpoint | Descrição |
 | ------ | -------- | --------- |
-| POST | `/ai` | Chat com o personal trainer virtual (Google Gemini). Resposta em _streaming_. Suporta _tools_: buscar/atualizar dados do usuário, listar e criar planos de treino. |
+| POST | `/ai` | Chat com o personal trainer virtual (Llama 3.3 70B via Groq, com fallback OpenRouter). Resposta em _streaming_. Suporta _tools_: buscar/atualizar dados do usuário, listar e criar planos de treino. |
 
 ### Autenticação & Documentação
 
@@ -334,22 +356,22 @@ curl -X GET "http://localhost:8080/stats?from=2026-06-01&to=2026-06-30" \
 
 # ⚙️ Variáveis de Ambiente
 
-Validadas em `src/lib/env.ts` com Zod na inicialização (a aplicação não sobe se alguma obrigatória estiver ausente/inválida).
+Validadas em `src/env/index.ts` com Zod (`safeParse`) na inicialização (a aplicação não sobe se alguma obrigatória estiver ausente/inválida).
 
 | Variável | Obrigatória | Descrição |
 | -------- | ----------- | --------- |
 | `PORT` | Não (default `8080`) | Porta em que o servidor escuta. |
-| `DATABASE_URL` | Sim | URL de conexão com o PostgreSQL (deve começar com `postgresql://`). Lida também pelo `prisma.config.ts`. |
+| `DATABASE_URL` | Sim | URL de conexão com o PostgreSQL (deve começar com `postgresql://`). Lida também pelo `prisma.config.ts`. Aceita `?schema=` para isolar schema (usado pelos testes e2e). |
 | `BETTER_AUTH_SECRET` | Sim | Segredo usado pelo BetterAuth para assinar sessões. |
 | `API_BASE_URL` | Não (default `http://localhost:8080`) | URL base pública da API (usada pelo BetterAuth e na doc OpenAPI). |
 | `GOOGLE_CLIENT_ID` | Sim | Client ID do OAuth do Google. |
 | `GOOGLE_CLIENT_SECRET` | Sim | Client Secret do OAuth do Google. |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | Sim | Chave de API do Google Generative AI (Gemini) usada pelo endpoint de IA. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Sim | Chave de API do Google Generative AI. |
+| `GROQ_API_KEY` | Sim | Chave da Groq — provedor principal do modelo de IA (Llama 3.3 70B). |
+| `OPENROUTER_API_KEY` | Sim | Chave do OpenRouter — _fallback_ do modelo de IA em caso de rate limit. |
 | `OPENAI_API_KEY` | Não (opcional) | Chave da OpenAI (dependência instalada; opcional no schema de env). |
 | `WEB_APP_BASE_URL` | Sim | URL do Front-end; usada como origem confiável (CORS/trustedOrigins). |
 | `NODE_ENV` | Não (default `development`) | Ambiente: `development`, `production` ou `test`. |
-
-> O `.env.example` também referencia `BETTER_AUTH_URL`, mas essa variável **não** é lida pelo schema de env atual (`src/lib/env.ts`).
 
 Exemplo de `.env` para desenvolvimento local (usando o Postgres do Docker Compose):
 
@@ -361,7 +383,9 @@ API_BASE_URL=http://localhost:8080
 WEB_APP_BASE_URL=http://localhost:3000
 GOOGLE_CLIENT_ID=seu_client_id
 GOOGLE_CLIENT_SECRET=seu_client_secret
-GOOGLE_GENERATIVE_AI_API_KEY=sua_chave_gemini
+GOOGLE_GENERATIVE_AI_API_KEY=sua_chave_google_ai
+GROQ_API_KEY=sua_chave_groq
+OPENROUTER_API_KEY=sua_chave_openrouter
 NODE_ENV=development
 ```
 
@@ -417,12 +441,12 @@ Servidor com _hot reload_ via `tsx --watch`. A documentação fica disponível e
 
 ```bash
 pnpm build      # gera o Prisma Client, compila com tsc e resolve os aliases (saída em dist/)
-node dist/index.js
+node dist/server.js
 ```
 
 ## Execução com Docker
 
-O `Dockerfile` usa build multi-stage (base → deps → build → production) e inicia com `node dist/index.js`.
+O `Dockerfile` usa build multi-stage (base → deps → build → production) e inicia com `node dist/server.js`.
 
 ```bash
 docker build -t fit-ai-api .
@@ -435,11 +459,27 @@ docker run -p 8080:8080 --env-file .env fit-ai-api
 
 # 🧪 Testes
 
-**Não há testes configurados** neste repositório — não existe _test runner_ nem scripts de teste no `package.json`. A garantia de qualidade atual se apoia em:
+O projeto usa **Vitest** com dois projetos de teste (`vitest.config.ts`):
 
-- **Tipagem estática** (TypeScript em modo `strict`).
-- **Validação em runtime** de todas as entradas/saídas com Zod.
-- **Lint e format** com Biome.
+### Testes unitários (`src/test/use-cases/`)
+
+Testam os use cases isoladamente, injetando os **repositórios in-memory** no lugar das implementações Prisma (padrão SUT). Não precisam de banco de dados.
+
+```bash
+pnpm test          # roda os unitários
+pnpm test:watch    # modo watch
+```
+
+### Testes e2e (`src/test/e2e/`)
+
+Sobem o app real (`app.ready()`) e fazem requisições HTTP com **supertest**, incluindo o fluxo de autenticação do BetterAuth (signup por email/senha via helper `createAndAuthenticateUser`). **Cada arquivo de teste roda em um schema isolado do PostgreSQL**, criado com `prisma db push` no setup e destruído ao final — os arquivos executam em série.
+
+```bash
+pnpm test:e2e      # requer DATABASE_URL acessível (ex.: Postgres do docker compose)
+pnpm test:all      # unitários + e2e
+```
+
+Além dos testes, a qualidade se apoia em tipagem estática (TypeScript `strict`), validação em runtime com Zod e lint/format com Biome.
 
 ---
 
@@ -449,8 +489,12 @@ Definidos no `package.json`:
 
 | Script | Comando | Descrição |
 | ------ | ------- | --------- |
-| `pnpm dev` | `tsx --watch src/index.ts` | Sobe o servidor em desenvolvimento com _hot reload_. |
-| `pnpm build` | `prisma generate && tsc && tsc-alias ...` | Gera o Prisma Client, compila o TypeScript e resolve os aliases de path (saída em `dist/`). |
+| `pnpm dev` | `tsx --watch src/server.ts` | Sobe o servidor em desenvolvimento com _hot reload_. |
+| `pnpm build` | `prisma generate && tsc -p tsconfig.build.json && tsc-alias ...` | Gera o Prisma Client, compila o TypeScript (sem os testes) e resolve os aliases de path (saída em `dist/`). |
+| `pnpm test` | `vitest run --project unit` | Roda os testes unitários. |
+| `pnpm test:watch` | `vitest --project unit` | Testes unitários em modo watch. |
+| `pnpm test:e2e` | `vitest run --project e2e` | Roda os testes e2e (requer `DATABASE_URL`). |
+| `pnpm test:all` | `vitest run` | Roda unitários + e2e. |
 | `pnpm lint` | `biome lint .` | Executa o linter (Biome). |
 | `pnpm check` | `biome check .` | Roda lint + format sem escrever (verificação). |
 | `pnpm check:fix` | `biome check --write .` | Roda lint + format aplicando correções automáticas. |
@@ -470,7 +514,7 @@ pnpm prisma studio        # Abre o Prisma Studio (GUI do banco)
 
 O projeto está preparado para deploy via **container Docker**:
 
-- **`Dockerfile`** — build multi-stage baseado em `node:24-slim`, com `corepack`/`pnpm`. Estágios: `base` (dependências de sistema e cópia de `package.json`/`prisma`), `deps` (instalação com _frozen lockfile_), `build` (`pnpm run build`) e `production` (instala apenas dependências de produção e copia `dist/`). O container inicia com `node dist/index.js` e a aplicação escuta em `0.0.0.0:PORT`.
+- **`Dockerfile`** — build multi-stage baseado em `node:24-slim`, com `corepack`/`pnpm`. Estágios: `base` (dependências de sistema e cópia de `package.json`/`prisma`), `deps` (instalação com _frozen lockfile_), `build` (`pnpm run build`) e `production` (instala apenas dependências de produção e copia `dist/`). O container inicia com `node dist/server.js` e a aplicação escuta em `0.0.0.0:PORT`.
 - **`docker-compose.yml`** — provisiona o PostgreSQL para desenvolvimento local.
 
 A configuração de cookies cross-subdomain para o domínio `.viniciusrbr.dev` em produção (`src/lib/auth.ts`) indica que a API é hospedada sob esse domínio. **Não** há, no repositório, arquivos de configuração específicos de plataformas como Railway, Render, Vercel, AWS, Azure ou Google Cloud.
@@ -485,7 +529,7 @@ Práticas de segurança identificadas no código:
 - **CORS restritivo** — `@fastify/cors` configurado com origem específica (`WEB_APP_BASE_URL`) e `credentials: true`; `trustedOrigins` no BetterAuth também restrito.
 - **Cookies de sessão** — com suporte a cross-subdomain apenas em produção, sob domínio definido.
 - **Validação de entrada** — todas as entradas (body, params, query) são validadas com Zod (`z.uuid()`, `z.iso.date()`, `z.iso.datetime()`, ranges numéricos etc.), o que também mitiga entradas malformadas.
-- **Validação de variáveis de ambiente** — `src/lib/env.ts` falha rápido no startup se algo obrigatório faltar.
+- **Validação de variáveis de ambiente** — `src/env/index.ts` falha rápido no startup se algo obrigatório faltar.
 - **Proteção contra SQL Injection** — uso do Prisma ORM (queries parametrizadas), sem SQL cru concatenado.
 - **Autorização por posse de recurso** — os use cases verificam que o recurso pertence ao `userId` da sessão antes de retorná-lo.
 
@@ -498,13 +542,10 @@ Pontos **não** implementados / observações:
 
 # 📈 Possíveis Melhorias
 
-- **Testes:** adicionar testes unitários (use cases) e de integração (rotas), com um _runner_ como Vitest.
 - **Rate limiting:** proteger endpoints (especialmente `/ai` e `/api/auth/*`) contra abuso com `@fastify/rate-limit`.
 - **Observabilidade/Monitoramento:** métricas (Prometheus), tracing distribuído (OpenTelemetry) e um _health check_ dedicado; hoje há apenas logs via Pino.
-- **Camada de repositório:** extrair o acesso ao Prisma dos use cases para repositórios, facilitando testes e troca de infraestrutura.
 - **Performance/Escalabilidade:** cache (ex.: Redis) para dados de home/stats; paginação na listagem de planos; revisão de índices no banco.
 - **Segurança:** headers de segurança (`@fastify/helmet`), rotação de segredos e credenciais de banco fortes em todos os ambientes.
-- **Consistência de configuração:** alinhar `.env.example` com o schema de env real (ex.: `BETTER_AUTH_URL` não é usada) e centralizar origens de CORS/trustedOrigins.
-- **Deploy:** adicionar CI/CD e, se aplicável, `docker-compose` completo (app + banco) ou manifests da plataforma-alvo.
+- **Deploy:** adicionar CI/CD (rodando lint, typecheck e testes) e, se aplicável, `docker-compose` completo (app + banco) ou manifests da plataforma-alvo.
 
 ---
