@@ -24,7 +24,11 @@ export const WorkoutPlanSchema = z.object({
 	),
 });
 
-export const CreateWorkoutPlanBodySchema = WorkoutPlanSchema.omit({ id: true });
+export const CreateWorkoutPlanBodySchema = WorkoutPlanSchema.omit({ id: true }).extend({
+	workoutDays: z.array(
+		WorkoutPlanSchema.shape.workoutDays.element.omit({ estimatedDurationInSeconds: true }),
+	),
+});
 export type CreateWorkoutPlanBody = z.infer<typeof CreateWorkoutPlanBodySchema>;
 
 export const ListWorkoutPlansQuerySchema = z.object({

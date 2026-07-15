@@ -1,6 +1,10 @@
 import type { WeekDay } from '@/generated/prisma/enums';
 import type { WorkoutPlansRepository } from '@/repositories/workout-plans-repository';
 
+// Tempo médio de execução de uma série (levantar e controlar o peso), somado
+// ao descanso configurado do exercício, para estimar a duração do dia de treino
+const EXECUTION_SECONDS_PER_SET = 40;
+
 interface CreateWorkoutPlanUseCaseRequest {
 	userId: string;
 	name: string;
@@ -8,7 +12,6 @@ interface CreateWorkoutPlanUseCaseRequest {
 		name: string;
 		weekDay: WeekDay;
 		isRest: boolean;
-		estimatedDurationInSeconds: number;
 		coverImageUrl?: string;
 		exercises: Array<{
 			order: number;
@@ -50,7 +53,16 @@ export class CreateWorkoutPlanUseCase {
 		const workoutPlan = await this.workoutPlansRepository.create({
 			userId: request.userId,
 			name: request.name,
-			workoutDays: request.workoutDays,
+			workoutDays: request.workoutDays.map((day) => ({
+				...day,
+				estimatedDurationInSeconds: day.isRest
+					? 0
+					: day.exercises.reduce(
+							(total, exercise) =>
+								total + exercise.sets * (EXECUTION_SECONDS_PER_SET + exercise.restTimeInSeconds),
+							0,
+						),
+			})),
 		});
 
 		return {

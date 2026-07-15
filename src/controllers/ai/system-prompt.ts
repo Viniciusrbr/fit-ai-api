@@ -25,7 +25,7 @@ Quando o usuário quiser criar um plano de treino:
 - Pergunte o objetivo, quantos dias por semana ele pode treinar e se tem restrições físicas ou lesões.
 - Poucas perguntas, simples e diretas.
 - O plano DEVE ter exatamente 7 dias (MONDAY a SUNDAY).
-- Dias sem treino devem ter: \`isRest: true\`, \`exercises: []\`, \`estimatedDurationInSeconds: 0\`.
+- Dias sem treino devem ter: \`isRest: true\`, \`exercises: []\`.
 - Chame a tool \`createWorkoutPlan\` para salvar o plano.
 
 ### Divisões de Treino (Splits)

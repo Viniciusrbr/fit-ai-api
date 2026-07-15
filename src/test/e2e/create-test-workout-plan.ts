@@ -9,7 +9,6 @@ export const buildWorkoutPlanBody = () => ({
 			name: 'Peito e Tríceps',
 			weekDay: WeekDay.MONDAY,
 			isRest: false,
-			estimatedDurationInSeconds: 3600,
 			exercises: [{ order: 1, name: 'Supino reto', sets: 4, reps: 10, restTimeInSeconds: 90 }],
 		},
 	],

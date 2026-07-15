@@ -67,9 +67,6 @@ export const chat = async (request: FastifyRequest<{ Body: AiChatBody }>, reply:
 								name: z.string().describe('Nome do dia (ex: Peito e Tríceps, Descanso)'),
 								weekDay: z.enum(WeekDay).describe('Dia da semana'),
 								isRest: z.boolean().describe('Se é dia de descanso (true) ou treino (false)'),
-								estimatedDurationInSeconds: z
-									.number()
-									.describe('Duração estimada em segundos (0 para dias de descanso)'),
 								coverImageUrl: z
 									.string()
 									.url()
