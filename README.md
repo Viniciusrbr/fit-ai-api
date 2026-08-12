@@ -403,7 +403,7 @@ NODE_ENV=development
 
 ```bash
 git clone https://github.com/Viniciusrbr/fit-ai-api.git
-cd back-end
+cd fit-ai-api
 ```
 
 ## Instalação das dependências
