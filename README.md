@@ -402,7 +402,7 @@ NODE_ENV=development
 ## Instalação
 
 ```bash
-git clone https://github.com/Viniciusrbr/fit-ai-back-end.git
+git clone https://github.com/Viniciusrbr/fit-ai-api.git
 cd back-end
 ```
 
@@ -523,7 +523,7 @@ A configuração de cookies cross-subdomain para o domínio `.viniciusrbr.dev` e
 
 # 🔒 Segurança
 
-Práticas de segurança identificadas no código:
+Práticas de segurança no código:
 
 - **Autenticação delegada ao BetterAuth** — sessões persistidas, tokens gerenciados pela biblioteca; **não** há armazenamento manual de senhas na aplicação (login é via Google OAuth).
 - **CORS restritivo** — `@fastify/cors` configurado com origem específica (`WEB_APP_BASE_URL`) e `credentials: true`; `trustedOrigins` no BetterAuth também restrito.
