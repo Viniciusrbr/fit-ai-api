@@ -5,6 +5,7 @@
 	"scripts": {
 		"dev": "tsx --watch src/server.ts",
 		"check": "biome check .",
+		"typecheck": "tsc --noEmit",
 		"build": "pnpm exec prisma generate && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
 		"check:fix": "biome check --write .",
 		"format": "biome format --write .",
