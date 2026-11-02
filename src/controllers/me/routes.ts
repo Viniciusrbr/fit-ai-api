@@ -4,7 +4,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { getUserTrainData } from '@/controllers/me/get-user-train-data';
 import { GetUserTrainDataResponseSchema } from '@/controllers/me/schemas';
 import { verifyAuth } from '@/middlewares/verify-auth';
-import { ErrorSchema } from '@/schemas';
+import { InternalErrorSchema, sessionAuth, UnauthorizedErrorSchema } from '@/schemas';
 
 export const meRoutes = async (app: FastifyInstance) => {
 	const router = app.withTypeProvider<ZodTypeProvider>();
@@ -17,10 +17,11 @@ export const meRoutes = async (app: FastifyInstance) => {
 			operationId: 'getUserTrainData',
 			tags: ['User'],
 			summary: 'Get train data for the authenticated user',
+			security: sessionAuth,
 			response: {
 				200: GetUserTrainDataResponseSchema,
-				401: ErrorSchema,
-				500: ErrorSchema,
+				401: UnauthorizedErrorSchema,
+				500: InternalErrorSchema,
 			},
 		},
 		handler: getUserTrainData,

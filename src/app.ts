@@ -7,6 +7,7 @@ import {
 	hasZodFastifySchemaValidationErrors,
 	isResponseSerializationError,
 	jsonSchemaTransform,
+	jsonSchemaTransformObject,
 	serializerCompiler,
 	validatorCompiler,
 	type ZodTypeProvider,
@@ -77,7 +78,17 @@ await app.register(fastifySwagger, {
 	openapi: {
 		info: {
 			title: 'Fit.ai API',
-			description: 'API documentation for Fit.ai',
+			description: [
+				'API REST do Fit.ai: planos de treino, sessões, estatísticas e um personal trainer com IA.',
+				'',
+				'## Autenticação',
+				'',
+				'A API usa o **cookie de sessão** do BetterAuth. Faça login pelos endpoints da aba **Auth API** (`/api/auth/*`) e envie as requisições com `credentials: "include"`. Sem a sessão, as rotas protegidas respondem `401`.',
+				'',
+				'## Erros',
+				'',
+				'Todo erro segue o formato `{ "error": string, "code": string }`. Use o `code` para tratar cada caso no front-end: ele é estável, a mensagem em `error` pode mudar.',
+			].join('\n'),
 			version: '1.0.0',
 		},
 		servers: [
@@ -86,8 +97,32 @@ await app.register(fastifySwagger, {
 				url: env.API_BASE_URL,
 			},
 		],
+		tags: [
+			{
+				name: 'Workout Plan',
+				description:
+					'Planos de treino, dias, exercícios e sessões. Cada usuário tem um plano ativo.',
+			},
+			{ name: 'Home', description: 'Dados da tela inicial: treino do dia e consistência.' },
+			{ name: 'Stats', description: 'Estatísticas de treino em um período.' },
+			{ name: 'User', description: 'Dados físicos do usuário autenticado.' },
+			{ name: 'AI', description: 'Chat com o personal trainer virtual.' },
+		],
+		components: {
+			securitySchemes: {
+				sessionCookie: {
+					type: 'apiKey',
+					in: 'cookie',
+					// nome padrão do BetterAuth; em produção (HTTPS) ganha o prefixo __Secure-
+					name: 'better-auth.session_token',
+					description: 'Cookie de sessão criado pelo login do BetterAuth.',
+				},
+			},
+		},
 	},
 	transform: jsonSchemaTransform,
+	// schemas registrados com .meta({ id }) viram componentes reutilizáveis
+	transformObject: jsonSchemaTransformObject,
 });
 
 // Routes
@@ -111,6 +146,9 @@ app.withTypeProvider<ZodTypeProvider>().route({
 await app.register(fastifyApiReference, {
 	routePrefix: '/docs',
 	configuration: {
+		authentication: {
+			preferredSecurityScheme: 'sessionCookie',
+		},
 		sources: [
 			{
 				title: 'Fit.ai Docs',
